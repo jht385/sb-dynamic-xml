@@ -24,29 +24,28 @@ public class DynamicXmlConfig {
 	private boolean refreshMapper;
 	private ResourcePatternResolver resourceResolver = new PathMatchingResourcePatternResolver();
 
-	@Bean
-	public MybatisMapperRefreshAllKill xMLMapperLoader() {
-		Resource[] resources = new Resource[0];
-		try {
-			resources = resourceResolver.getResources(mapperLocations);
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-		return new MybatisMapperRefreshAllKill(resources, sqlSessionFactory, 10, 5, refreshMapper);
-	}
-
-//  mp原版会报错
-//	@Bean
-//	public MybatisMapperRefresh mybatisMapperRefresh() {
+//	@Bean // 全清目前比较稳，暂时留着
+//	public MybatisMapperRefreshAllKill xMLMapperLoader() {
 //		Resource[] resources = new Resource[0];
 //		try {
 //			resources = resourceResolver.getResources(mapperLocations);
 //		} catch (IOException e) {
 //			e.printStackTrace();
 //		}
-//		MybatisMapperRefresh mybatisMapperRefresh = new MybatisMapperRefresh(resources, sqlSessionFactory, 10, 5,
-//				refreshMapper);
-//		return mybatisMapperRefresh;
-//
+//		return new MybatisMapperRefreshAllKill(resources, sqlSessionFactory, 10, 5, refreshMapper);
 //	}
+
+	@Bean // mp原版修改，之后升级可能又需要改
+	public MybatisMapperRefresh mybatisMapperRefresh() {
+		Resource[] resources = new Resource[0];
+		try {
+			resources = resourceResolver.getResources(mapperLocations);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		MybatisMapperRefresh mybatisMapperRefresh = new MybatisMapperRefresh(resources, sqlSessionFactory, 10, 5,
+				refreshMapper);
+		return mybatisMapperRefresh;
+
+	}
 }

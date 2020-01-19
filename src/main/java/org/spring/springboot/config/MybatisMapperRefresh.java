@@ -104,10 +104,10 @@ public class MybatisMapperRefresh implements Runnable {
 								List<Resource> removeList = JAR_MAPPER.get(filePath);
 								if (removeList != null && !removeList.isEmpty()) {
 									for (Resource resource : removeList) {
-										runnable.refresh(resource);
+										runnable.refreshEx(resource);
 									}
 								} else {
-									runnable.refresh(new FileSystemResource(file));
+									runnable.refreshEx(new FileSystemResource(file));
 								}
 							}
 						}
@@ -126,48 +126,58 @@ public class MybatisMapperRefresh implements Runnable {
 		}
 	}
 
+	// 修改版，增加了一下清理操作
 	@SuppressWarnings("rawtypes")
 	private void refreshEx(Resource resource) throws Exception {
 		this.configuration = sqlSessionFactory.getConfiguration();
 		boolean isSupper = configuration.getClass().getSuperclass() == Configuration.class;
 		try {
 			Class clz = isSupper ? configuration.getClass().getSuperclass() : configuration.getClass();
-			
+
+			Field loadedResourcesField = clz.getDeclaredField("loadedResources");
+			loadedResourcesField.setAccessible(true);
+			Set loadedResourcesSet = ((Set) loadedResourcesField.get(configuration));
+
 			XPathParser xPathParser = new XPathParser(resource.getInputStream(), true, configuration.getVariables(),
 					new XMLMapperEntityResolver());
 			XNode context = xPathParser.evalNode("/mapper");
 			String namespace = context.getStringAttribute("namespace");
-			List<XNode> list = context.evalNodes("insert|delete|select|update");
-			
+			Field field = MapperRegistry.class.getDeclaredField("knownMappers");
+			field.setAccessible(true);
+			Map mapConfig = (Map) field.get(configuration.getMapperRegistry());
+			mapConfig.remove(Resources.classForName(namespace));
+			loadedResourcesSet.remove(resource.toString());
+			configuration.getCacheNames().remove(namespace);
+			cleanParameterMap(context.evalNodes("/mapper/parameterMap"), namespace);
+			cleanResultMap(context.evalNodes("/mapper/resultMap"), namespace);
+			cleanKeyGenerators(context.evalNodes("insert|delete|select|update"), namespace);
+			cleanSqlElement(context.evalNodes("/mapper/sql"), namespace);
+
+			// 增加部分
+			List<XNode> list = context.evalNodes("insert|delete|select|update|resultMap|parameterMap|sql"); // 这里需要写上xml所有出现的节点
 			Arrays.asList("mappedStatements", "caches", "resultMaps", "parameterMaps", "keyGenerators", "sqlFragments")
 					.forEach(f -> {
-						Field field;
 						try {
-							field = clz.getDeclaredField(f);
-							field.setAccessible(true);
-							Map mapConfig = (Map) field.get(configuration);
-							
-							for (XNode parameterMapNode : list) {
-								String id = parameterMapNode.getStringAttribute("id");
-								mapConfig.remove(namespace + "." + id);
+							Field temp = clz.getDeclaredField(f);
+							temp.setAccessible(true);
+							Map m = (Map) temp.get(configuration);
+
+							if (m.size() != 0) {
+								for (XNode parameterMapNode : list) {
+									String id = parameterMapNode.getStringAttribute("id");
+									m.remove(namespace + "." + id);
+								}
 							}
 						} catch (Exception e) {
 							e.printStackTrace();
 						}
 					});
-			Field field = clz.getDeclaredField("loadedResources");
-			field.setAccessible(true);
-			Set setConfig = (Set) field.get(configuration);
-			for (XNode parameterMapNode : list) {
-				String id = parameterMapNode.getStringAttribute("id");
-				setConfig.remove(namespace + "." + id);
-			}
-			
+			//
+
 			XMLMapperBuilder xmlMapperBuilder = new XMLMapperBuilder(resource.getInputStream(),
-					configuration, resource.toString(),
-					configuration.getSqlFragments());
+					sqlSessionFactory.getConfiguration(), resource.toString(),
+					sqlSessionFactory.getConfiguration().getSqlFragments());
 			xmlMapperBuilder.parse();
-			
 			log.info("refresh: '" + resource + "', success!");
 		} catch (IOException e) {
 			log.error("Refresh IOException :" + e.getMessage());
@@ -176,6 +186,7 @@ public class MybatisMapperRefresh implements Runnable {
 		}
 	}
 
+	// 原版会报错
 	@SuppressWarnings("rawtypes")
 	private void refresh(Resource resource)
 			throws ClassNotFoundException, NoSuchFieldException, IllegalAccessException {
@@ -213,6 +224,7 @@ public class MybatisMapperRefresh implements Runnable {
 		}
 	}
 
+	@SuppressWarnings("unlikely-arg-type")
 	private void cleanParameterMap(List<XNode> list, String namespace) {
 		for (XNode parameterMapNode : list) {
 			String id = parameterMapNode.getStringAttribute("id");
